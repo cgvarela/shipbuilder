@@ -6,6 +6,8 @@ import (
 	"os"
 	"strings"
 	"text/template"
+
+	log "github.com/sirupsen/logrus"
 )
 
 const (
@@ -567,7 +569,11 @@ global
 
     # Default ciphers to use on SSL-enabled listening sockets.
     # For more information, see ciphers(1SSL).
-    ssl-default-bind-ciphers kEECDH+aRSA+AES:kRSA+AES:+AES256:RC4-SHA:!kEDH:!LOW:!EXP:!MD5:!aNULL:!eNULL
+    ssl-default-bind-options no-sslv3
+    ssl-default-bind-ciphers ECDH+AESGCM:DH+AESGCM:ECDH+AES256:DH+AES256:ECDH+AES128:DH+AES:RSA+AESGCM:RSA+AES:!aNULL:!MD5:!DSS
+
+    ssl-default-server-options no-sslv3
+    ssl-default-server-ciphers ECDH+AESGCM:DH+AESGCM:ECDH+AES256:DH+AES256:ECDH+AES128:DH+AES:RSA+AESGCM:RSA+AES:!aNULL:!MD5:!DSS
 
 defaults
     log global
@@ -591,7 +597,14 @@ frontend frontend
     option forwardfor
     option http-server-close
 {{range $app := .Applications}}
-    {{if .Domains}}use_backend {{$app.Name}}{{if $app.Maintenance}}-maintenance{{end}} if { {{range .Domains}} hdr(host) -i {{.}} {{end}} }{{end}}
+    {{- range $i, $domain := .Domains }}
+    acl {{$i}}_{{$app.Name}} hdr(host) -i {{$domain}}
+    {{- end }}
+{{end}}
+{{range $app := .Applications}}
+    {{- range $i, $domain := .Domains }}
+    use_backend {{$app.Name}}{{if $app.Maintenance}}-maintenance{{end}} if {{$i}}_{{$app.Name}}
+    {{- end }}
 {{end}}
     {{if and .HaProxyStatsEnabled .HaProxyCredentials .LoadBalancers}}use_backend load_balancer if { {{range .LoadBalancers }} hdr(host) -i {{.}} {{end}} }{{end}}
 
@@ -641,7 +654,7 @@ backend load_balancer
 	}
 	for _, buildPack := range listing {
 		if buildPack.IsDir() {
-			fmt.Printf("Discovered build-pack: %v\n", buildPack.Name())
+			log.Infof("Discovered build-pack: %v", buildPack.Name())
 			contents, err := ioutil.ReadFile(DIRECTORY + "/build-packs/" + buildPack.Name() + "/pre-hook")
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "fatal: build-pack '%v' missing pre-hook file: %v\n", buildPack.Name(), err)
